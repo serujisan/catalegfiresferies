@@ -26,7 +26,7 @@ use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 // Configurar auto-update desde GitHub
 $updateChecker = PucFactory::buildUpdateChecker(
-    'https://github.com/USUARIO/catalegfiresferies/', // <-- CAMBIAR POR TU REPO
+    'https://github.com/serujisancatalegfiresferies/', // <-- CAMBIAR POR TU REPO
     __FILE__,
     'catalegfiresferies'
 );
