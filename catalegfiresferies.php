@@ -149,12 +149,15 @@ class CatalegFiresFeries {
      * Cargar assets del admin
      */
     public function enqueue_admin_assets($hook) {
-        if ('toplevel_page_catalegfiresferies' !== $hook && 'post.php' !== $hook && 'post-new.php' !== $hook) {
+        if (strpos($hook, 'catalegfiresferies') === false && 'post.php' !== $hook && 'post-new.php' !== $hook) {
             return;
         }
         
+        // Cargar jQuery UI Sortable
+        wp_enqueue_script('jquery-ui-sortable');
+        
         wp_enqueue_style('cff-admin', CFF_PLUGIN_URL . 'assets/css/admin.css', array(), CFF_VERSION);
-        wp_enqueue_script('cff-admin', CFF_PLUGIN_URL . 'assets/js/admin.js', array('jquery'), CFF_VERSION, true);
+        wp_enqueue_script('cff-admin', CFF_PLUGIN_URL . 'assets/js/admin.js', array('jquery', 'jquery-ui-sortable'), CFF_VERSION, true);
         
         wp_localize_script('cff-admin', 'cffAjax', array(
             'ajax_url' => admin_url('admin-ajax.php'),

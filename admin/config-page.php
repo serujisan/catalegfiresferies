@@ -295,7 +295,7 @@ jQuery(document).ready(function($) {
         
         $(this).prop('disabled', true).text('<?php _e('Carregant...', 'catalegfiresferies'); ?>');
         
-        $.post(ajaxurl, {
+        $.post(cffAjax.ajax_url, {
             action: 'cff_load_child_categories',
             parent_id: parentId,
             nonce: '<?php echo wp_create_nonce('cff_load_categories'); ?>'
