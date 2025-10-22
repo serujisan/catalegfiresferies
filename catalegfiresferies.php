@@ -3,7 +3,7 @@
  * Plugin Name: Catàleg Fires i Fèries
  * Plugin URI: https://festesmajorsdecatalunya.cat
  * Description: Plugin para gestionar catálogo de fires i fèries con categorías y favoritos
- * Version: 2.2.2
+ * Version: 2.2.3
  * Author: Sergi Maneja
  * Author URI: https://festesmajorsdecatalunya.cat
  * License: GPL2
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes
-define('CFF_VERSION', '2.2.2');
+define('CFF_VERSION', '2.2.3');
 define('CFF_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFF_PLUGIN_URL', plugin_dir_url(__FILE__));
 
