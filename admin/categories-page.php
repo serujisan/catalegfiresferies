@@ -8,9 +8,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Obtener todas las categorías de la taxonomía personalizada
+// Obtener todas las categorías estándar de WordPress
 $categories = get_terms(array(
-    'taxonomy' => 'cataleg_categoria',
+    'taxonomy' => 'category',
     'hide_empty' => false,
     'orderby' => 'name',
     'order' => 'ASC',
@@ -46,13 +46,13 @@ $categories = get_terms(array(
                     <?php foreach ($categories as $category): 
                         $parent_name = '';
                         if ($category->parent != 0) {
-                            $parent = get_term($category->parent, 'cataleg_categoria');
+                            $parent = get_term($category->parent, 'category');
                             if ($parent && !is_wp_error($parent)) {
                                 $parent_name = $parent->name;
                             }
                         }
                         
-                        $edit_link = admin_url('term.php?taxonomy=cataleg_categoria&tag_ID=' . $category->term_id . '&post_type=post');
+                        $edit_link = admin_url('term.php?taxonomy=category&tag_ID=' . $category->term_id . '&post_type=post');
                         $view_link = get_term_link($category);
                     ?>
                     <tr>
