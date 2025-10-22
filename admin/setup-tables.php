@@ -12,8 +12,27 @@ if (!defined('ABSPATH')) {
 global $wpdb;
 $charset_collate = $wpdb->get_charset_collate();
 
+// Manejar acciones
+if (isset($_GET['action']) && isset($_GET['_wpnonce'])) {
+    if ($_GET['action'] === 'recreate' && wp_verify_nonce($_GET['_wpnonce'], 'cff_recreate_tables')) {
+        // Eliminar tablas existentes
+        $tables = array(
+            $wpdb->prefix . 'cff_favorites',
+            $wpdb->prefix . 'cff_category_relations',
+            $wpdb->prefix . 'cff_parent_categories'
+        );
+        
+        foreach ($tables as $table) {
+            $wpdb->query("DROP TABLE IF EXISTS $table");
+        }
+        
+        echo '<div class="notice notice-success"><p><strong>Taules eliminades correctament.</strong> Recarrega la pàgina per crear-les de nou.</p></div>';
+    }
+}
+
 echo '<div class="wrap">';
 echo '<h1>Configuració de Taules - Catàleg Fires i Fèries</h1>';
+echo '<p>Aquesta pàgina et permet verificar i gestionar les taules de la base de dades del plugin.</p>';
 
 // Tabla 1: Categorías padre
 $table_parent = $wpdb->prefix . 'cff_parent_categories';
@@ -128,6 +147,23 @@ if ($exists_favorites) {
     }
 }
 
+echo '<hr>';
+echo '<h2 style="color: #d63638;">Zona de Perill</h2>';
+echo '<p>Si tens problemes amb l\'estructura de les taules o necessites actualitzar-les a la nova versió:</p>';
+echo '<div style="background: #fff3cd; border-left: 4px solid #d63638; padding: 15px; margin: 20px 0;">';
+echo '<p><strong style="color: #d63638;">⚠️ ATENCIÓ:</strong> Aquesta acció eliminarà <strong>TOTES</strong> les taules del plugin i les seves dades:</p>';
+echo '<ul>';
+echo '<li>Categories pare</li>';
+echo '<li>Relacions de categories</li>';
+echo '<li>Favorits i ordenacions</li>';
+echo '</ul>';
+echo '<p><strong>NO es poden recuperar les dades després d\'eliminar-les.</strong> Només utilitza aquesta opció si estàs segur.</p>';
+$recreate_url = wp_nonce_url(
+    admin_url('admin.php?page=catalegfiresferies-setup-tables&action=recreate'),
+    'cff_recreate_tables'
+);
+echo '<p><a href="' . $recreate_url . '" class="button button-link-delete" onclick="return confirm(\'Segur que vols ELIMINAR TOTES les taules i dades del plugin? Aquesta acció NO es pot desfer.\');">Eliminar i Recrear Taules</a></p>';
+echo '</div>';
 echo '<hr>';
 echo '<p><a href="' . admin_url('admin.php?page=catalegfiresferies-parent-categories') . '" class="button button-primary">Tornar a Categories Pare</a></p>';
 echo '</div>';
