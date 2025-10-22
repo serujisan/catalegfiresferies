@@ -3,7 +3,7 @@
  * Plugin Name: Catàleg Fires i Fèries
  * Plugin URI: https://festesmajorsdecatalunya.cat
  * Description: Plugin para gestionar catálogo de fires i fèries con categorías y favoritos
- * Version: 3.2.1
+ * Version: 3.3.0
  * Author: Sergi Maneja
  * Author URI: https://festesmajorsdecatalunya.cat
  * License: GPL2
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes
-define('CFF_VERSION', '3.2.1');
+define('CFF_VERSION', '3.3.0');
 define('CFF_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFF_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -1317,6 +1317,7 @@ class CatalegFiresFeries {
             'slug' => '',
             'columnas' => 4,
             'max_favoritos' => 4,
+            'filtrar' => 'si',
         ), $atts);
         
         if (empty($atts['slug'])) {
@@ -1350,10 +1351,32 @@ class CatalegFiresFeries {
         
         $cols = intval($atts['columnas']);
         $max = intval($atts['max_favoritos']);
+        $mostrar_filtro = ($atts['filtrar'] === 'si' || $atts['filtrar'] === 'yes' || $atts['filtrar'] === '1');
+        
+        // Generar ID único para este catálogo
+        $catalog_id = 'cff-catalog-' . sanitize_title($parent->slug) . '-' . uniqid();
         
         ob_start();
         ?>
-        <div class="cff-cataleg cff-cataleg-grid" style="--cff-cols: <?php echo $cols; ?>">
+        <div class="cff-cataleg-wrapper" id="<?php echo $catalog_id; ?>">
+            <?php if ($mostrar_filtro && count($wp_categories) > 1): ?>
+            <!-- Filtro de categorías -->
+            <div class="cff-filter-container" style="margin-bottom: 30px; text-align: center;">
+                <button class="cff-filter-btn cff-filter-active" data-category="all" style="margin: 5px; padding: 10px 20px; border: 2px solid #2271b1; background: #2271b1; color: white; border-radius: 25px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s;">
+                    <?php _e('Tots', 'catalegfiresferies'); ?>
+                </button>
+                <?php foreach ($wp_categories as $relation): 
+                    $cat_info = get_category($relation->wp_category_id);
+                    if (!$cat_info || is_wp_error($cat_info)) continue;
+                ?>
+                    <button class="cff-filter-btn" data-category="<?php echo $cat_info->term_id; ?>" style="margin: 5px; padding: 10px 20px; border: 2px solid #2271b1; background: white; color: #2271b1; border-radius: 25px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s;">
+                        <?php echo esc_html($cat_info->name); ?>
+                    </button>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+            
+            <div class="cff-cataleg cff-cataleg-grid" style="--cff-cols: <?php echo $cols; ?>;">
             <?php foreach ($wp_categories as $relation): 
                 $categoria = get_category($relation->wp_category_id);
                 if (!$categoria || is_wp_error($categoria)) continue;
@@ -1374,7 +1397,7 @@ class CatalegFiresFeries {
                 }
                 ?>
                 
-                <div class="cff-categoria-card" id="cat-<?php echo $categoria->term_id; ?>">
+                <div class="cff-categoria-card" id="cat-<?php echo $categoria->term_id; ?>" data-category-id="<?php echo $categoria->term_id; ?>">
                     <h2 class="cff-categoria-titulo">
                         <a href="<?php echo get_category_link($categoria); ?>">
                             <?php echo esc_html($categoria->name); ?>
@@ -1420,7 +1443,59 @@ class CatalegFiresFeries {
                     </div>
                 </div>
             <?php endforeach; ?>
+            </div>
         </div>
+        
+        <?php if ($mostrar_filtro && count($wp_categories) > 1): ?>
+        <script>
+        (function() {
+            var catalogId = '<?php echo $catalog_id; ?>';
+            var catalog = document.getElementById(catalogId);
+            var filterBtns = catalog.querySelectorAll('.cff-filter-btn');
+            var cards = catalog.querySelectorAll('.cff-categoria-card');
+            
+            filterBtns.forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    var categoryId = this.getAttribute('data-category');
+                    
+                    // Actualizar botones activos
+                    filterBtns.forEach(function(b) {
+                        b.classList.remove('cff-filter-active');
+                        b.style.background = 'white';
+                        b.style.color = '#2271b1';
+                    });
+                    this.classList.add('cff-filter-active');
+                    this.style.background = '#2271b1';
+                    this.style.color = 'white';
+                    
+                    // Filtrar tarjetas
+                    cards.forEach(function(card) {
+                        if (categoryId === 'all') {
+                            card.style.display = '';
+                        } else {
+                            var cardCategoryId = card.getAttribute('data-category-id');
+                            if (cardCategoryId === categoryId) {
+                                card.style.display = '';
+                            } else {
+                                card.style.display = 'none';
+                            }
+                        }
+                    });
+                });
+            });
+        })();
+        </script>
+        
+        <style>
+        .cff-filter-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .cff-filter-btn:active {
+            transform: translateY(0);
+        }
+        </style>
+        <?php endif; ?>
         <?php
         
         return ob_get_clean();
