@@ -3,7 +3,7 @@
  * Plugin Name: Catàleg Fires i Fèries
  * Plugin URI: https://festesmajorsdecatalunya.cat
  * Description: Plugin para gestionar catálogo de fires i fèries con categorías y favoritos
- * Version: 2.2.3
+ * Version: 3.0.0
  * Author: Sergi Maneja
  * Author URI: https://festesmajorsdecatalunya.cat
  * License: GPL2
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes
-define('CFF_VERSION', '2.2.3');
+define('CFF_VERSION', '3.0.0');
 define('CFF_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFF_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -71,32 +71,68 @@ class CatalegFiresFeries {
         add_action('wp_ajax_cff_create_categories', array($this, 'ajax_create_categories'));
         add_action('wp_ajax_cff_import_posts', array($this, 'ajax_import_posts'));
         add_action('wp_ajax_cff_load_child_categories', array($this, 'ajax_load_child_categories'));
+        add_action('wp_ajax_cff_save_parent_category', array($this, 'ajax_save_parent_category'));
+        add_action('wp_ajax_cff_delete_parent_category', array($this, 'ajax_delete_parent_category'));
+        add_action('wp_ajax_cff_save_category_relations', array($this, 'ajax_save_category_relations'));
+        add_action('wp_ajax_cff_save_favorites_order', array($this, 'ajax_save_favorites_order'));
         
         // Shortcode personalizado
         add_shortcode('cataleg_custom', array($this, 'cataleg_custom_shortcode'));
+        add_shortcode('cataleg_parent', array($this, 'cataleg_parent_shortcode'));
     }
     
     /**
      * Activación del plugin
      */
     public function activate() {
-        // Crear tabla personalizada si es necesaria
         global $wpdb;
-        $table_name = $wpdb->prefix . 'cff_favorites';
         $charset_collate = $wpdb->get_charset_collate();
         
-        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        
+        // Tabla de categorías padre del plugin
+        $table_parent = $wpdb->prefix . 'cff_parent_categories';
+        $sql_parent = "CREATE TABLE IF NOT EXISTS $table_parent (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            name varchar(200) NOT NULL,
+            slug varchar(200) NOT NULL,
+            description text,
+            order_num int(11) DEFAULT 0,
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY slug (slug)
+        ) $charset_collate;";
+        dbDelta($sql_parent);
+        
+        // Tabla de relación entre categorías padre del plugin y categorías de WordPress
+        $table_relations = $wpdb->prefix . 'cff_category_relations';
+        $sql_relations = "CREATE TABLE IF NOT EXISTS $table_relations (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            parent_id mediumint(9) NOT NULL,
+            wp_category_id bigint(20) NOT NULL,
+            order_num int(11) DEFAULT 0,
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            KEY parent_id (parent_id),
+            KEY wp_category_id (wp_category_id)
+        ) $charset_collate;";
+        dbDelta($sql_relations);
+        
+        // Tabla de favoritos y ordenación de posts
+        $table_favorites = $wpdb->prefix . 'cff_favorites';
+        $sql_favorites = "CREATE TABLE IF NOT EXISTS $table_favorites (
             id mediumint(9) NOT NULL AUTO_INCREMENT,
             post_id bigint(20) NOT NULL,
+            wp_category_id bigint(20) NOT NULL,
             order_num int(11) DEFAULT 0,
             is_favorite tinyint(1) DEFAULT 0,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
-            KEY post_id (post_id)
+            KEY post_id (post_id),
+            KEY wp_category_id (wp_category_id),
+            UNIQUE KEY post_category (post_id, wp_category_id)
         ) $charset_collate;";
-        
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        dbDelta($sql);
+        dbDelta($sql_favorites);
     }
     
     /**
@@ -190,8 +226,17 @@ class CatalegFiresFeries {
         
         add_submenu_page(
             'catalegfiresferies',
-            __('Veure Categories', 'catalegfiresferies'),
-            __('Veure Categories', 'catalegfiresferies'),
+            __('Categories Pare', 'catalegfiresferies'),
+            __('Categories Pare', 'catalegfiresferies'),
+            'manage_options',
+            'catalegfiresferies-parent-categories',
+            array($this, 'parent_categories_page')
+        );
+        
+        add_submenu_page(
+            'catalegfiresferies',
+            __('Veure Categories WP', 'catalegfiresferies'),
+            __('Veure Categories WP', 'catalegfiresferies'),
             'manage_options',
             'catalegfiresferies-categories',
             array($this, 'categories_page')
@@ -213,7 +258,14 @@ class CatalegFiresFeries {
     }
     
     /**
-     * Página para ver categorías
+     * Página para gestionar categorías padre
+     */
+    public function parent_categories_page() {
+        include CFF_PLUGIN_DIR . 'admin/parent-categories-page.php';
+    }
+    
+    /**
+     * Página para ver categorías de WordPress
      */
     public function categories_page() {
         include CFF_PLUGIN_DIR . 'admin/categories-page.php';
@@ -961,6 +1013,305 @@ class CatalegFiresFeries {
                         <?php endforeach; ?>
                     </p>
                 </article>
+            <?php endforeach; ?>
+        </div>
+        <?php
+        
+        return ob_get_clean();
+    }
+    
+    /**
+     * AJAX: Guardar categoría padre
+     */
+    public function ajax_save_parent_category() {
+        check_ajax_referer('cff_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        global $wpdb;
+        $table = $wpdb->prefix . 'cff_parent_categories';
+        
+        $name = sanitize_text_field($_POST['name']);
+        $slug = sanitize_title($_POST['slug']);
+        $description = wp_kses_post($_POST['description']);
+        
+        // Verificar si el slug ya existe
+        $exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $table WHERE slug = %s",
+            $slug
+        ));
+        
+        if ($exists) {
+            wp_send_json_error('Aquest slug ja existeix. Si us plau, tria un altre.');
+        }
+        
+        $result = $wpdb->insert(
+            $table,
+            array(
+                'name' => $name,
+                'slug' => $slug,
+                'description' => $description,
+                'order_num' => 0
+            ),
+            array('%s', '%s', '%s', '%d')
+        );
+        
+        if ($result) {
+            wp_send_json_success(array('id' => $wpdb->insert_id));
+        } else {
+            wp_send_json_error('Error al crear la categoria');
+        }
+    }
+    
+    /**
+     * AJAX: Eliminar categoría padre
+     */
+    public function ajax_delete_parent_category() {
+        check_ajax_referer('cff_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        global $wpdb;
+        $table_parent = $wpdb->prefix . 'cff_parent_categories';
+        $table_relations = $wpdb->prefix . 'cff_category_relations';
+        
+        $id = intval($_POST['id']);
+        
+        // Eliminar relaciones primero
+        $wpdb->delete($table_relations, array('parent_id' => $id), array('%d'));
+        
+        // Eliminar categoría padre
+        $result = $wpdb->delete($table_parent, array('id' => $id), array('%d'));
+        
+        if ($result) {
+            wp_send_json_success();
+        } else {
+            wp_send_json_error('Error al eliminar la categoria');
+        }
+    }
+    
+    /**
+     * AJAX: Guardar relaciones de categorías
+     */
+    public function ajax_save_category_relations() {
+        check_ajax_referer('cff_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        global $wpdb;
+        $table = $wpdb->prefix . 'cff_category_relations';
+        
+        $parent_id = intval($_POST['parent_id']);
+        $categories = isset($_POST['categories']) ? array_map('intval', $_POST['categories']) : array();
+        
+        // Eliminar relaciones existentes
+        $wpdb->delete($table, array('parent_id' => $parent_id), array('%d'));
+        
+        // Insertar nuevas relaciones
+        foreach ($categories as $index => $cat_id) {
+            $wpdb->insert(
+                $table,
+                array(
+                    'parent_id' => $parent_id,
+                    'wp_category_id' => $cat_id,
+                    'order_num' => $index
+                ),
+                array('%d', '%d', '%d')
+            );
+        }
+        
+        wp_send_json_success();
+    }
+    
+    /**
+     * AJAX: Guardar orden de favoritos
+     */
+    public function ajax_save_favorites_order() {
+        check_ajax_referer('cff_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        global $wpdb;
+        $table_relations = $wpdb->prefix . 'cff_category_relations';
+        $table_favorites = $wpdb->prefix . 'cff_favorites';
+        
+        $parent_id = intval($_POST['parent_id']);
+        $category_order = isset($_POST['category_order']) ? $_POST['category_order'] : array();
+        $posts_order = isset($_POST['posts_order']) ? $_POST['posts_order'] : array();
+        
+        // Actualizar orden de categorías
+        foreach ($category_order as $cat_data) {
+            $wpdb->update(
+                $table_relations,
+                array('order_num' => intval($cat_data['order'])),
+                array(
+                    'parent_id' => $parent_id,
+                    'wp_category_id' => intval($cat_data['wp_category_id'])
+                ),
+                array('%d'),
+                array('%d', '%d')
+            );
+        }
+        
+        // Actualizar orden de posts favoritos
+        foreach ($posts_order as $cat_id => $posts) {
+            $cat_id = intval($cat_id);
+            foreach ($posts as $post_data) {
+                $post_id = intval($post_data['post_id']);
+                $order = intval($post_data['order']);
+                
+                // Verificar si el registro existe
+                $exists = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM $table_favorites WHERE post_id = %d AND wp_category_id = %d",
+                    $post_id,
+                    $cat_id
+                ));
+                
+                if ($exists) {
+                    // Actualizar
+                    $wpdb->update(
+                        $table_favorites,
+                        array('order_num' => $order),
+                        array('post_id' => $post_id, 'wp_category_id' => $cat_id),
+                        array('%d'),
+                        array('%d', '%d')
+                    );
+                } else {
+                    // Insertar
+                    $wpdb->insert(
+                        $table_favorites,
+                        array(
+                            'post_id' => $post_id,
+                            'wp_category_id' => $cat_id,
+                            'order_num' => $order,
+                            'is_favorite' => 1
+                        ),
+                        array('%d', '%d', '%d', '%d')
+                    );
+                }
+            }
+        }
+        
+        wp_send_json_success();
+    }
+    
+    /**
+     * Shortcode para mostrar categoría padre con sus categorías hijas y posts favoritos
+     */
+    public function cataleg_parent_shortcode($atts) {
+        $atts = shortcode_atts(array(
+            'slug' => '',
+            'columnas' => 4,
+            'max_favoritos' => 4,
+        ), $atts);
+        
+        if (empty($atts['slug'])) {
+            return '<p>' . __('Cal especificar un slug: [cataleg_parent slug="nom-categoria"]', 'catalegfiresferies') . '</p>';
+        }
+        
+        global $wpdb;
+        $table_parent = $wpdb->prefix . 'cff_parent_categories';
+        $table_relations = $wpdb->prefix . 'cff_category_relations';
+        $table_favorites = $wpdb->prefix . 'cff_favorites';
+        
+        // Obtener categoría padre
+        $parent = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_parent WHERE slug = %s",
+            $atts['slug']
+        ));
+        
+        if (!$parent) {
+            return '<p>' . __('Categoria pare no trobada.', 'catalegfiresferies') . '</p>';
+        }
+        
+        // Obtener categorías de WordPress asignadas (ordenadas)
+        $wp_categories = $wpdb->get_results($wpdb->prepare(
+            "SELECT wp_category_id FROM $table_relations WHERE parent_id = %d ORDER BY order_num ASC",
+            $parent->id
+        ));
+        
+        if (empty($wp_categories)) {
+            return '<p>' . __('No hi ha categories assignades a aquesta categoria pare.', 'catalegfiresferies') . '</p>';
+        }
+        
+        $cols = intval($atts['columnas']);
+        $max = intval($atts['max_favoritos']);
+        
+        ob_start();
+        ?>
+        <div class="cff-cataleg cff-cataleg-grid" style="--cff-cols: <?php echo $cols; ?>">
+            <?php foreach ($wp_categories as $relation): 
+                $categoria = get_category($relation->wp_category_id);
+                if (!$categoria || is_wp_error($categoria)) continue;
+                
+                // Obtener posts favoritos de esta categoría (ordenados)
+                $favorite_posts = $wpdb->get_results($wpdb->prepare(
+                    "SELECT post_id FROM $table_favorites 
+                     WHERE wp_category_id = %d AND is_favorite = 1 
+                     ORDER BY order_num ASC 
+                     LIMIT %d",
+                    $categoria->term_id,
+                    $max
+                ));
+                
+                if (empty($favorite_posts)) {
+                    continue;
+                }
+                ?>
+                
+                <div class="cff-categoria-card" id="cat-<?php echo $categoria->term_id; ?>">
+                    <h2 class="cff-categoria-titulo">
+                        <a href="<?php echo get_category_link($categoria); ?>">
+                            <?php echo esc_html($categoria->name); ?>
+                        </a>
+                    </h2>
+                    
+                    <?php if (!empty($categoria->description)): ?>
+                        <div class="cff-categoria-descripcio">
+                            <?php echo wpautop($categoria->description); ?>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <div class="cff-posts-grid-mini">
+                        <?php foreach ($favorite_posts as $fav): 
+                            $post = get_post($fav->post_id);
+                            if (!$post) continue;
+                        ?>
+                            <article class="cff-post-item-mini cff-favorit">
+                                <?php if (has_post_thumbnail($post->ID)): ?>
+                                    <div class="cff-post-thumbnail-mini">
+                                        <a href="<?php echo get_permalink($post->ID); ?>">
+                                            <?php echo get_the_post_thumbnail($post->ID, 'thumbnail'); ?>
+                                        </a>
+                                        <span class="cff-favorit-badge">⭐</span>
+                                    </div>
+                                <?php endif; ?>
+                                
+                                <div class="cff-post-content-mini">
+                                    <h4 class="cff-post-title-mini">
+                                        <a href="<?php echo get_permalink($post->ID); ?>">
+                                            <?php echo esc_html($post->post_title); ?>
+                                        </a>
+                                    </h4>
+                                </div>
+                            </article>
+                        <?php endforeach; ?>
+                    </div>
+                    
+                    <div class="cff-categoria-footer">
+                        <a href="<?php echo get_category_link($categoria); ?>" class="cff-veure-tots">
+                            <?php _e('Veure tots', 'catalegfiresferies'); ?> →
+                        </a>
+                    </div>
+                </div>
             <?php endforeach; ?>
         </div>
         <?php
