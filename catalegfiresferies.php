@@ -3,7 +3,7 @@
  * Plugin Name: Catàleg Fires i Fèries
  * Plugin URI: https://festesmajorsdecatalunya.cat
  * Description: Plugin para gestionar catálogo de fires i fèries con categorías y favoritos
- * Version: 3.3.0
+ * Version: 3.4.0
  * Author: Sergi Maneja
  * Author URI: https://festesmajorsdecatalunya.cat
  * License: GPL2
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes
-define('CFF_VERSION', '3.3.0');
+define('CFF_VERSION', '3.4.0');
 define('CFF_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFF_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -1359,24 +1359,18 @@ class CatalegFiresFeries {
         ob_start();
         ?>
         <div class="cff-cataleg-wrapper" id="<?php echo $catalog_id; ?>">
-            <?php if ($mostrar_filtro && count($wp_categories) > 1): ?>
-            <!-- Filtro de categorías -->
-            <div class="cff-filter-container" style="margin-bottom: 30px; text-align: center;">
-                <button class="cff-filter-btn cff-filter-active" data-category="all" style="margin: 5px; padding: 10px 20px; border: 2px solid #2271b1; background: #2271b1; color: white; border-radius: 25px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s;">
-                    <?php _e('Tots', 'catalegfiresferies'); ?>
-                </button>
-                <?php foreach ($wp_categories as $relation): 
-                    $cat_info = get_category($relation->wp_category_id);
-                    if (!$cat_info || is_wp_error($cat_info)) continue;
-                ?>
-                    <button class="cff-filter-btn" data-category="<?php echo $cat_info->term_id; ?>" style="margin: 5px; padding: 10px 20px; border: 2px solid #2271b1; background: white; color: #2271b1; border-radius: 25px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s;">
-                        <?php echo esc_html($cat_info->name); ?>
-                    </button>
-                <?php endforeach; ?>
+            <?php if ($mostrar_filtro): ?>
+            <!-- Filtro de búsqueda -->
+            <div class="cff-search-container" style="margin-bottom: 30px; max-width: 600px; margin-left: auto; margin-right: auto;">
+                <input type="text" 
+                       class="cff-search-input" 
+                       placeholder="<?php _e('Cerca per nom de categoria o proveïdor...', 'catalegfiresferies'); ?>"
+                       style="width: 100%; padding: 15px 20px; font-size: 16px; border: 2px solid #ddd; border-radius: 50px; outline: none; transition: all 0.3s;">
+                <div class="cff-search-results" style="margin-top: 10px; font-size: 14px; color: #666;"></div>
             </div>
             <?php endif; ?>
             
-            <div class="cff-cataleg cff-cataleg-grid" style="--cff-cols: <?php echo $cols; ?>;">
+            <div class="cff-cataleg cff-cataleg-list">
             <?php foreach ($wp_categories as $relation): 
                 $categoria = get_category($relation->wp_category_id);
                 if (!$categoria || is_wp_error($categoria)) continue;
@@ -1397,37 +1391,37 @@ class CatalegFiresFeries {
                 }
                 ?>
                 
-                <div class="cff-categoria-card" id="cat-<?php echo $categoria->term_id; ?>" data-category-id="<?php echo $categoria->term_id; ?>">
-                    <h2 class="cff-categoria-titulo">
-                        <a href="<?php echo get_category_link($categoria); ?>">
+                <div class="cff-categoria-section" data-category-id="<?php echo $categoria->term_id; ?>" data-category-name="<?php echo esc_attr(strtolower($categoria->name)); ?>" style="margin-bottom: 50px;">
+                    <h2 class="cff-categoria-titulo" style="font-size: 28px; margin-bottom: 20px; border-bottom: 3px solid #2271b1; padding-bottom: 10px;">
+                        <a href="<?php echo get_category_link($categoria); ?>" style="text-decoration: none; color: inherit;">
                             <?php echo esc_html($categoria->name); ?>
                         </a>
                     </h2>
                     
                     <?php if (!empty($categoria->description)): ?>
-                        <div class="cff-categoria-descripcio">
+                        <div class="cff-categoria-descripcio" style="margin-bottom: 20px; color: #666;">
                             <?php echo wpautop($categoria->description); ?>
                         </div>
                     <?php endif; ?>
                     
-                    <div class="cff-posts-grid-mini">
+                    <div class="cff-posts-grid" style="display: grid; grid-template-columns: repeat(<?php echo $cols; ?>, 1fr); gap: 20px; margin-bottom: 20px;">
                         <?php foreach ($favorite_posts as $fav): 
                             $post = get_post($fav->post_id);
                             if (!$post) continue;
                         ?>
-                            <article class="cff-post-item-mini cff-favorit">
+                            <article class="cff-post-item cff-favorit" data-post-title="<?php echo esc_attr(strtolower($post->post_title)); ?>">
                                 <?php if (has_post_thumbnail($post->ID)): ?>
-                                    <div class="cff-post-thumbnail-mini">
+                                    <div class="cff-post-thumbnail" style="position: relative;">
                                         <a href="<?php echo get_permalink($post->ID); ?>">
-                                            <?php echo get_the_post_thumbnail($post->ID, 'thumbnail'); ?>
+                                            <?php echo get_the_post_thumbnail($post->ID, 'medium'); ?>
                                         </a>
-                                        <span class="cff-favorit-badge">⭐</span>
+                                        <span class="cff-favorit-badge" style="position: absolute; top: 10px; right: 10px; background: #ffb900; padding: 5px 10px; border-radius: 5px; font-size: 18px;">⭐</span>
                                     </div>
                                 <?php endif; ?>
                                 
-                                <div class="cff-post-content-mini">
-                                    <h4 class="cff-post-title-mini">
-                                        <a href="<?php echo get_permalink($post->ID); ?>">
+                                <div class="cff-post-content" style="padding: 15px;">
+                                    <h4 class="cff-post-title" style="margin: 0 0 10px 0; font-size: 18px;">
+                                        <a href="<?php echo get_permalink($post->ID); ?>" style="text-decoration: none; color: inherit;">
                                             <?php echo esc_html($post->post_title); ?>
                                         </a>
                                     </h4>
@@ -1436,8 +1430,8 @@ class CatalegFiresFeries {
                         <?php endforeach; ?>
                     </div>
                     
-                    <div class="cff-categoria-footer">
-                        <a href="<?php echo get_category_link($categoria); ?>" class="cff-veure-tots">
+                    <div class="cff-categoria-footer" style="text-align: right;">
+                        <a href="<?php echo get_category_link($categoria); ?>" class="cff-veure-tots" style="display: inline-block; padding: 10px 20px; background: #2271b1; color: white; text-decoration: none; border-radius: 5px; transition: all 0.3s;">
                             <?php _e('Veure tots', 'catalegfiresferies'); ?> →
                         </a>
                     </div>
@@ -1446,53 +1440,115 @@ class CatalegFiresFeries {
             </div>
         </div>
         
-        <?php if ($mostrar_filtro && count($wp_categories) > 1): ?>
+        <?php if ($mostrar_filtro): ?>
         <script>
         (function() {
             var catalogId = '<?php echo $catalog_id; ?>';
             var catalog = document.getElementById(catalogId);
-            var filterBtns = catalog.querySelectorAll('.cff-filter-btn');
-            var cards = catalog.querySelectorAll('.cff-categoria-card');
+            var searchInput = catalog.querySelector('.cff-search-input');
+            var searchResults = catalog.querySelector('.cff-search-results');
+            var sections = catalog.querySelectorAll('.cff-categoria-section');
             
-            filterBtns.forEach(function(btn) {
-                btn.addEventListener('click', function() {
-                    var categoryId = this.getAttribute('data-category');
-                    
-                    // Actualizar botones activos
-                    filterBtns.forEach(function(b) {
-                        b.classList.remove('cff-filter-active');
-                        b.style.background = 'white';
-                        b.style.color = '#2271b1';
+            // Función de búsqueda
+            searchInput.addEventListener('input', function() {
+                var searchTerm = this.value.toLowerCase().trim();
+                var visibleCategories = 0;
+                var visiblePosts = 0;
+                
+                if (searchTerm === '') {
+                    // Mostrar todo
+                    sections.forEach(function(section) {
+                        section.style.display = '';
+                        var posts = section.querySelectorAll('.cff-post-item');
+                        posts.forEach(function(post) {
+                            post.style.display = '';
+                        });
+                        visibleCategories++;
+                        visiblePosts += posts.length;
                     });
-                    this.classList.add('cff-filter-active');
-                    this.style.background = '#2271b1';
-                    this.style.color = 'white';
-                    
-                    // Filtrar tarjetas
-                    cards.forEach(function(card) {
-                        if (categoryId === 'all') {
-                            card.style.display = '';
-                        } else {
-                            var cardCategoryId = card.getAttribute('data-category-id');
-                            if (cardCategoryId === categoryId) {
-                                card.style.display = '';
+                    searchResults.textContent = '';
+                } else {
+                    // Filtrar
+                    sections.forEach(function(section) {
+                        var categoryName = section.getAttribute('data-category-name');
+                        var posts = section.querySelectorAll('.cff-post-item');
+                        var categoryMatch = categoryName.indexOf(searchTerm) !== -1;
+                        var visiblePostsInCategory = 0;
+                        
+                        // Filtrar posts
+                        posts.forEach(function(post) {
+                            var postTitle = post.getAttribute('data-post-title');
+                            if (categoryMatch || postTitle.indexOf(searchTerm) !== -1) {
+                                post.style.display = '';
+                                visiblePostsInCategory++;
                             } else {
-                                card.style.display = 'none';
+                                post.style.display = 'none';
                             }
+                        });
+                        
+                        // Mostrar/ocultar categoría
+                        if (visiblePostsInCategory > 0) {
+                            section.style.display = '';
+                            visibleCategories++;
+                            visiblePosts += visiblePostsInCategory;
+                        } else {
+                            section.style.display = 'none';
                         }
                     });
-                });
+                    
+                    // Actualizar resultados
+                    if (visiblePosts === 0) {
+                        searchResults.textContent = '<?php _e('No s\'han trobat resultats', 'catalegfiresferies'); ?>';
+                        searchResults.style.color = '#d63638';
+                    } else {
+                        searchResults.textContent = visibleCategories + ' <?php _e('categories', 'catalegfiresferies'); ?>, ' + visiblePosts + ' <?php _e('proveïdors', 'catalegfiresferies'); ?>';
+                        searchResults.style.color = '#2271b1';
+                    }
+                }
+            });
+            
+            // Focus effect
+            searchInput.addEventListener('focus', function() {
+                this.style.borderColor = '#2271b1';
+                this.style.boxShadow = '0 0 0 3px rgba(34, 113, 177, 0.1)';
+            });
+            
+            searchInput.addEventListener('blur', function() {
+                this.style.borderColor = '#ddd';
+                this.style.boxShadow = 'none';
             });
         })();
         </script>
         
         <style>
-        .cff-filter-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        @media (max-width: 768px) {
+            .cff-posts-grid {
+                grid-template-columns: repeat(2, 1fr) !important;
+            }
         }
-        .cff-filter-btn:active {
-            transform: translateY(0);
+        @media (max-width: 480px) {
+            .cff-posts-grid {
+                grid-template-columns: 1fr !important;
+            }
+        }
+        .cff-post-item {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+        .cff-post-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .cff-post-item img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .cff-veure-tots:hover {
+            background: #135e96;
         }
         </style>
         <?php endif; ?>
