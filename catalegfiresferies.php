@@ -3,7 +3,7 @@
  * Plugin Name: Catàleg Fires i Fèries
  * Plugin URI: https://festesmajorsdecatalunya.cat
  * Description: Plugin para gestionar catálogo de fires i fèries con categorías y favoritos
- * Version: 2.1.0
+ * Version: 2.2.0
  * Author: Sergi Maneja
  * Author URI: https://festesmajorsdecatalunya.cat
  * License: GPL2
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes
-define('CFF_VERSION', '2.1.0');
+define('CFF_VERSION', '2.2.0');
 define('CFF_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFF_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -51,6 +51,10 @@ class CatalegFiresFeries {
         // Menú de administración
         add_action('admin_menu', array($this, 'add_admin_menu'));
         
+        // Guardar y eliminar configuración del catálogo
+        add_action('admin_post_cff_save_catalog_config', array($this, 'save_catalog_config'));
+        add_action('admin_post_cff_delete_config', array($this, 'delete_catalog_config'));
+        
         // Metabox para posts
         add_action('add_meta_boxes', array($this, 'add_metabox'));
         add_action('save_post', array($this, 'save_metabox_data'));
@@ -66,6 +70,10 @@ class CatalegFiresFeries {
         add_action('wp_ajax_cff_import_rtf', array($this, 'ajax_import_rtf'));
         add_action('wp_ajax_cff_create_categories', array($this, 'ajax_create_categories'));
         add_action('wp_ajax_cff_import_posts', array($this, 'ajax_import_posts'));
+        add_action('wp_ajax_cff_load_child_categories', array($this, 'ajax_load_child_categories'));
+        
+        // Shortcode personalizado
+        add_shortcode('cataleg_custom', array($this, 'cataleg_custom_shortcode'));
     }
     
     /**
@@ -167,6 +175,15 @@ class CatalegFiresFeries {
             'dashicons-calendar-alt',
             30
         );
+        
+        add_submenu_page(
+            'catalegfiresferies',
+            __('Configurar Catàleg', 'catalegfiresferies'),
+            __('Configurar Catàleg', 'catalegfiresferies'),
+            'manage_options',
+            'catalegfiresferies-config',
+            array($this, 'config_page')
+        );
     }
     
     /**
@@ -174,6 +191,13 @@ class CatalegFiresFeries {
      */
     public function admin_page() {
         include CFF_PLUGIN_DIR . 'admin/admin-page.php';
+    }
+    
+    /**
+     * Página de configuración del catálogo
+     */
+    public function config_page() {
+        include CFF_PLUGIN_DIR . 'admin/config-page.php';
     }
     
     /**
@@ -695,6 +719,234 @@ class CatalegFiresFeries {
             'message' => "S'han creat $created posts correctament (com a esborranys)",
             'created' => $created
         ));
+    }
+    
+    /**
+     * AJAX: Cargar categorías hijas para configuración
+     */
+    public function ajax_load_child_categories() {
+        check_ajax_referer('cff_load_categories', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permisos insuficientes'));
+        }
+        
+        $parent_id = intval($_POST['parent_id']);
+        $config = get_option('cff_catalog_config', array());
+        $selected_posts = isset($config['selected_posts']) ? $config['selected_posts'] : array();
+        
+        // Obtener categorías hijas
+        $child_categories = get_categories(array(
+            'parent' => $parent_id,
+            'hide_empty' => false
+        ));
+        
+        if (empty($child_categories)) {
+            wp_send_json_error(array('message' => 'No hi ha categories filles'));
+        }
+        
+        ob_start();
+        
+        foreach ($child_categories as $cat) {
+            // Obtener posts de esta categoría
+            $posts = get_posts(array(
+                'category' => $cat->term_id,
+                'numberposts' => -1,
+                'orderby' => 'title',
+                'order' => 'ASC'
+            ));
+            
+            $cat_selected = isset($selected_posts[$cat->term_id]) ? $selected_posts[$cat->term_id] : array();
+            ?>
+            <div class="cff-category-item" data-category-id="<?php echo $cat->term_id; ?>">
+                <div class="cff-category-header">
+                    <h3><?php echo esc_html($cat->name); ?></h3>
+                    <span><?php echo count($posts); ?> posts</span>
+                </div>
+                
+                <div class="cff-posts-selector">
+                    <h4><?php _e('Posts disponibles:', 'catalegfiresferies'); ?></h4>
+                    <div class="cff-available-posts">
+                        <?php foreach ($posts as $post): ?>
+                            <?php
+                            $is_selected = in_array($post->ID, $cat_selected);
+                            $thumbnail = get_the_post_thumbnail_url($post->ID, 'thumbnail');
+                            ?>
+                            <div class="cff-post-item" data-post-id="<?php echo $post->ID; ?>">
+                                <input type="checkbox" 
+                                       name="selected_posts[<?php echo $cat->term_id; ?>][]" 
+                                       value="<?php echo $post->ID; ?>"
+                                       <?php checked($is_selected); ?>>
+                                <?php if ($thumbnail): ?>
+                                    <img src="<?php echo esc_url($thumbnail); ?>" alt="">
+                                <?php endif; ?>
+                                <span class="cff-post-title"><?php echo esc_html($post->post_title); ?></span>
+                                <span class="cff-drag-handle">⋮</span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+            <?php
+        }
+        
+        $html = ob_get_clean();
+        
+        wp_send_json_success(array('html' => $html));
+    }
+    
+    /**
+     * Guardar configuración del catálogo
+     */
+    public function save_catalog_config() {
+        check_admin_referer('cff_save_catalog_config', 'cff_config_nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Permisos insuficientes', 'catalegfiresferies'));
+        }
+        
+        $config_id = isset($_POST['config_id']) && !empty($_POST['config_id']) 
+            ? sanitize_key($_POST['config_id']) 
+            : 'config_' . time();
+        
+        $config_name = sanitize_text_field($_POST['config_name']);
+        $parent_category = intval($_POST['parent_category']);
+        $selected_posts = isset($_POST['selected_posts']) ? $_POST['selected_posts'] : array();
+        $category_order = isset($_POST['category_order']) ? explode(',', $_POST['category_order']) : array();
+        
+        // Sanitizar posts
+        foreach ($selected_posts as $cat_id => $post_ids) {
+            $selected_posts[$cat_id] = array_map('intval', $post_ids);
+        }
+        
+        // Obtener todas las configuraciones
+        $all_configs = get_option('cff_catalog_configs', array());
+        
+        // Guardar/actualizar configuración
+        $all_configs[$config_id] = array(
+            'name' => $config_name,
+            'parent_category' => $parent_category,
+            'selected_posts' => $selected_posts,
+            'category_order' => array_map('intval', $category_order)
+        );
+        
+        update_option('cff_catalog_configs', $all_configs);
+        
+        wp_redirect(add_query_arg(array(
+            'page' => 'catalegfiresferies-config',
+            'config' => $config_id,
+            'saved' => '1'
+        ), admin_url('admin.php')));
+        exit;
+    }
+    
+    /**
+     * Eliminar configuración del catálogo
+     */
+    public function delete_catalog_config() {
+        check_admin_referer('cff_delete_config');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Permisos insuficientes', 'catalegfiresferies'));
+        }
+        
+        $config_id = isset($_GET['config']) ? sanitize_key($_GET['config']) : '';
+        
+        if (!empty($config_id)) {
+            $all_configs = get_option('cff_catalog_configs', array());
+            unset($all_configs[$config_id]);
+            update_option('cff_catalog_configs', $all_configs);
+        }
+        
+        wp_redirect(admin_url('admin.php?page=catalegfiresferies-config&deleted=1'));
+        exit;
+    }
+    
+    /**
+     * Shortcode personalizado para mostrar catálogo configurado
+     */
+    public function cataleg_custom_shortcode($atts) {
+        $atts = shortcode_atts(array(
+            'id' => '',
+            'columnas' => 4,
+        ), $atts);
+        
+        // Obtener configuración específica
+        $all_configs = get_option('cff_catalog_configs', array());
+        
+        if (empty($atts['id']) || !isset($all_configs[$atts['id']])) {
+            return '<p>' . __('Configuració no trobada. Especifica: [cataleg_custom id="config_id"]', 'catalegfiresferies') . '</p>';
+        }
+        
+        $config = $all_configs[$atts['id']];
+        
+        if (empty($config['parent_category']) || empty($config['selected_posts'])) {
+            return '<p>' . __('Catàleg no configurat completament.', 'catalegfiresferies') . '</p>';
+        }
+        
+        $parent_id = $config['parent_category'];
+        $selected_posts = $config['selected_posts'];
+        $category_order = isset($config['category_order']) ? $config['category_order'] : array();
+        
+        // Obtener categorías hijas
+        $child_categories = get_categories(array(
+            'parent' => $parent_id,
+            'hide_empty' => false
+        ));
+        
+        // Ordenar categorías según el orden guardado
+        if (!empty($category_order)) {
+            usort($child_categories, function($a, $b) use ($category_order) {
+                $pos_a = array_search($a->term_id, $category_order);
+                $pos_b = array_search($b->term_id, $category_order);
+                if ($pos_a === false) $pos_a = 9999;
+                if ($pos_b === false) $pos_b = 9999;
+                return $pos_a - $pos_b;
+            });
+        }
+        
+        if (empty($child_categories)) {
+            return '<p>' . __('No hi ha categories configurades.', 'catalegfiresferies') . '</p>';
+        }
+        
+        ob_start();
+        $cols = intval($atts['columnas']);
+        ?>
+        <div class="cff-cataleg-custom" style="--cff-cols: <?php echo $cols; ?>">
+            <?php foreach ($child_categories as $cat): ?>
+                <?php
+                if (empty($selected_posts[$cat->term_id])) {
+                    continue;
+                }
+                
+                $post_ids = $selected_posts[$cat->term_id];
+                ?>
+                <article class="categoria-proveidor" data-valor="<?php echo esc_attr($cat->slug); ?>">
+                    <h3><a href="<?php echo get_category_link($cat); ?>"><?php echo esc_html($cat->name); ?></a></h3>
+                    <p>
+                        <?php foreach ($post_ids as $post_id): ?>
+                            <?php
+                            $post = get_post($post_id);
+                            if (!$post) continue;
+                            $thumbnail = get_the_post_thumbnail_url($post_id, 'medium');
+                            ?>
+                            <a href="<?php echo get_permalink($post_id); ?>">
+                                <?php if ($thumbnail): ?>
+                                    <img class="alignnone wp-image-<?php echo $post_id; ?>" 
+                                         src="<?php echo esc_url($thumbnail); ?>" 
+                                         alt="<?php echo esc_attr($post->post_title); ?>" 
+                                         width="274" 
+                                         height="274" />
+                                <?php endif; ?>
+                            </a>
+                        <?php endforeach; ?>
+                    </p>
+                </article>
+            <?php endforeach; ?>
+        </div>
+        <?php
+        
+        return ob_get_clean();
     }
 }
 
