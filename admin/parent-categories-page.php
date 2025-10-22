@@ -231,7 +231,15 @@ $wp_categories = get_categories(array(
 </style>
 
 <script>
+var cffAjaxLocal = {
+    ajax_url: '<?php echo admin_url('admin-ajax.php'); ?>',
+    nonce: '<?php echo wp_create_nonce('cff_nonce'); ?>'
+};
+
 jQuery(document).ready(function($) {
+    // Usar cffAjaxLocal como fallback si cffAjax no está disponible
+    var ajaxConfig = (typeof cffAjax !== 'undefined') ? cffAjax : cffAjaxLocal;
+    
     // Auto-generar slug desde nombre
     $('#parent_name').on('input', function() {
         var name = $(this).val();
@@ -248,13 +256,13 @@ jQuery(document).ready(function($) {
         
         var formData = {
             action: 'cff_save_parent_category',
-            nonce: cffAjax.nonce,
+            nonce: ajaxConfig.nonce,
             name: $('#parent_name').val(),
             slug: $('#parent_slug').val(),
             description: $('#parent_description').val()
         };
         
-        $.post(cffAjax.ajax_url, formData, function(response) {
+        $.post(ajaxConfig.ajax_url, formData, function(response) {
             if (response.success) {
                 alert('Categoria pare creada correctament!');
                 location.reload();
@@ -273,9 +281,9 @@ jQuery(document).ready(function($) {
             return;
         }
         
-        $.post(cffAjax.ajax_url, {
+        $.post(ajaxConfig.ajax_url, {
             action: 'cff_delete_parent_category',
-            nonce: cffAjax.nonce,
+            nonce: ajaxConfig.nonce,
             id: id
         }, function(response) {
             if (response.success) {
@@ -297,9 +305,9 @@ jQuery(document).ready(function($) {
             selectedCategories.push($(this).val());
         });
         
-        $.post(cffAjax.ajax_url, {
+        $.post(ajaxConfig.ajax_url, {
             action: 'cff_save_category_relations',
-            nonce: cffAjax.nonce,
+            nonce: ajaxConfig.nonce,
             parent_id: parentId,
             categories: selectedCategories
         }, function(response) {
@@ -350,9 +358,9 @@ jQuery(document).ready(function($) {
             postsOrder[catId] = posts;
         });
         
-        $.post(cffAjax.ajax_url, {
+        $.post(ajaxConfig.ajax_url, {
             action: 'cff_save_favorites_order',
-            nonce: cffAjax.nonce,
+            nonce: ajaxConfig.nonce,
             parent_id: parentId,
             category_order: categoryOrder,
             posts_order: postsOrder
