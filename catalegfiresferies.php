@@ -3,7 +3,7 @@
  * Plugin Name: Catàleg Fires i Fèries
  * Plugin URI: https://festesmajorsdecatalunya.cat
  * Description: Plugin para gestionar catálogo de fires i fèries con categorías y favoritos
- * Version: 3.4.0
+ * Version: 3.5.0
  * Author: Sergi Maneja
  * Author URI: https://festesmajorsdecatalunya.cat
  * License: GPL2
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes
-define('CFF_VERSION', '3.4.0');
+define('CFF_VERSION', '3.5.0');
 define('CFF_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFF_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -1315,7 +1315,8 @@ class CatalegFiresFeries {
     public function cataleg_parent_shortcode($atts) {
         $atts = shortcode_atts(array(
             'slug' => '',
-            'columnas' => 4,
+            'columnas_categorias' => 1,
+            'columnas_posts' => 4,
             'max_favoritos' => 4,
             'filtrar' => 'si',
         ), $atts);
@@ -1349,7 +1350,8 @@ class CatalegFiresFeries {
             return '<p>' . __('No hi ha categories assignades a aquesta categoria pare.', 'catalegfiresferies') . '</p>';
         }
         
-        $cols = intval($atts['columnas']);
+        $cols_cats = intval($atts['columnas_categorias']);
+        $cols_posts = intval($atts['columnas_posts']);
         $max = intval($atts['max_favoritos']);
         $mostrar_filtro = ($atts['filtrar'] === 'si' || $atts['filtrar'] === 'yes' || $atts['filtrar'] === '1');
         
@@ -1370,8 +1372,8 @@ class CatalegFiresFeries {
             </div>
             <?php endif; ?>
             
-            <div class="cff-cataleg cff-cataleg-list">
-            <?php foreach ($wp_categories as $relation): 
+            <div class="cff-cataleg cff-cataleg-grid" style="display: grid; grid-template-columns: repeat(<?php echo $cols_cats; ?>, 1fr); gap: 30px;">
+            <?php foreach ($wp_categories as $relation):
                 $categoria = get_category($relation->wp_category_id);
                 if (!$categoria || is_wp_error($categoria)) continue;
                 
@@ -1404,7 +1406,7 @@ class CatalegFiresFeries {
                         </div>
                     <?php endif; ?>
                     
-                    <div class="cff-posts-grid" style="display: grid; grid-template-columns: repeat(<?php echo $cols; ?>, 1fr); gap: 20px; margin-bottom: 20px;">
+                    <div class="cff-posts-grid" style="display: grid; grid-template-columns: repeat(<?php echo $cols_posts; ?>, 1fr); gap: 20px; margin-bottom: 20px;">
                         <?php foreach ($favorite_posts as $fav): 
                             $post = get_post($fav->post_id);
                             if (!$post) continue;
