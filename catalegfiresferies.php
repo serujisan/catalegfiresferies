@@ -3,7 +3,7 @@
  * Plugin Name: Catàleg Fires i Fèries
  * Plugin URI: https://festesmajorsdecatalunya.cat
  * Description: Plugin para gestionar catálogo de fires i fèries con categorías y favoritos
- * Version: 2.0.0
+ * Version: 2.1.0
  * Author: Sergi Maneja
  * Author URI: https://festesmajorsdecatalunya.cat
  * License: GPL2
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes
-define('CFF_VERSION', '2.0.0');
+define('CFF_VERSION', '2.1.0');
 define('CFF_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFF_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -55,8 +55,12 @@ class CatalegFiresFeries {
         add_action('add_meta_boxes', array($this, 'add_metabox'));
         add_action('save_post', array($this, 'save_metabox_data'));
         
+        // Registrar taxonomía personalizada
+        add_action('init', array($this, 'register_taxonomy'));
+        
         // Shortcode
         add_shortcode('cataleg_festes', array($this, 'cataleg_shortcode'));
+        add_shortcode('cataleg_categoria', array($this, 'categoria_shortcode'));
         
         // AJAX handlers
         add_action('wp_ajax_cff_import_rtf', array($this, 'ajax_import_rtf'));
@@ -92,6 +96,37 @@ class CatalegFiresFeries {
      */
     public function deactivate() {
         // Limpiar tareas programadas si las hay
+    }
+    
+    /**
+     * Registrar taxonomía personalizada
+     */
+    public function register_taxonomy() {
+        $labels = array(
+            'name' => __('Categories del Catàleg', 'catalegfiresferies'),
+            'singular_name' => __('Categoria del Catàleg', 'catalegfiresferies'),
+            'search_items' => __('Cercar Categories', 'catalegfiresferies'),
+            'all_items' => __('Totes les Categories', 'catalegfiresferies'),
+            'parent_item' => __('Categoria Pare', 'catalegfiresferies'),
+            'parent_item_colon' => __('Categoria Pare:', 'catalegfiresferies'),
+            'edit_item' => __('Editar Categoria', 'catalegfiresferies'),
+            'update_item' => __('Actualitzar Categoria', 'catalegfiresferies'),
+            'add_new_item' => __('Afegir Nova Categoria', 'catalegfiresferies'),
+            'new_item_name' => __('Nom Nova Categoria', 'catalegfiresferies'),
+            'menu_name' => __('Categories Catàleg', 'catalegfiresferies'),
+        );
+        
+        $args = array(
+            'hierarchical' => true,
+            'labels' => $labels,
+            'show_ui' => true,
+            'show_admin_column' => true,
+            'query_var' => true,
+            'rewrite' => array('slug' => 'cataleg-categoria'),
+            'show_in_rest' => true,
+        );
+        
+        register_taxonomy('cataleg_categoria', array('post'), $args);
     }
     
     /**
@@ -211,129 +246,213 @@ class CatalegFiresFeries {
     }
     
     /**
-     * Shortcode para mostrar el catálogo
+     * Shortcode para mostrar el catálogo (solo favoritos)
      */
     public function cataleg_shortcode($atts) {
         $atts = shortcode_atts(array(
-            'categoria' => '',
-            'mostrar_favoritos' => 'si',
-            'posts_por_pagina' => -1
+            'columnas' => 4,
+            'max_favoritos' => 4,
         ), $atts);
         
         ob_start();
         
-        // Obtener categorías padres
-        $parent_categories = get_categories(array(
-            'parent' => 0,
+        // Obtener todas las categorías de la taxonomía personalizada
+        $categories = get_terms(array(
+            'taxonomy' => 'cataleg_categoria',
             'hide_empty' => false
         ));
         
-        if (!empty($atts['categoria'])) {
-            $parent_categories = get_categories(array(
-                'slug' => $atts['categoria'],
-                'hide_empty' => false
-            ));
+        if (empty($categories) || is_wp_error($categories)) {
+            return '<p>' . __('No hi ha categories configurades.', 'catalegfiresferies') . '</p>';
         }
         
+        $cols = intval($atts['columnas']);
+        $max = intval($atts['max_favoritos']);
         ?>
-        <div class="cff-cataleg">
-            <?php foreach ($parent_categories as $parent_cat): ?>
-                <div class="cff-categoria-seccion" id="cat-<?php echo $parent_cat->term_id; ?>">
-                    <h2 class="cff-categoria-titulo"><?php echo esc_html($parent_cat->name); ?></h2>
+        <div class="cff-cataleg cff-cataleg-grid" style="--cff-cols: <?php echo $cols; ?>">
+            <?php foreach ($categories as $categoria): ?>
+                <?php
+                // Query para obtener solo favoritos de esta categoría
+                $args = array(
+                    'post_type' => 'post',
+                    'posts_per_page' => $max,
+                    'tax_query' => array(
+                        array(
+                            'taxonomy' => 'cataleg_categoria',
+                            'field' => 'term_id',
+                            'terms' => $categoria->term_id
+                        )
+                    ),
+                    'meta_query' => array(
+                        array(
+                            'key' => '_cff_is_favorite',
+                            'value' => '1',
+                            'compare' => '='
+                        )
+                    ),
+                    'meta_key' => '_cff_order',
+                    'orderby' => 'meta_value_num',
+                    'order' => 'ASC'
+                );
+                
+                $query = new WP_Query($args);
+                
+                if (!$query->have_posts()) {
+                    wp_reset_postdata();
+                    continue;
+                }
+                ?>
+                
+                <div class="cff-categoria-card" id="cat-<?php echo $categoria->term_id; ?>">
+                    <h2 class="cff-categoria-titulo">
+                        <a href="<?php echo get_term_link($categoria); ?>">
+                            <?php echo esc_html($categoria->name); ?>
+                        </a>
+                    </h2>
                     
-                    <?php if (!empty($parent_cat->description)): ?>
+                    <?php if (!empty($categoria->description)): ?>
                         <div class="cff-categoria-descripcio">
-                            <?php echo wpautop($parent_cat->description); ?>
+                            <?php echo wpautop($categoria->description); ?>
                         </div>
                     <?php endif; ?>
                     
-                    <?php
-                    // Obtener subcategorías
-                    $child_categories = get_categories(array(
-                        'parent' => $parent_cat->term_id,
-                        'hide_empty' => false
-                    ));
+                    <div class="cff-posts-grid-mini">
+                        <?php while ($query->have_posts()): $query->the_post(); ?>
+                            <article class="cff-post-item-mini cff-favorit">
+                                <?php if (has_post_thumbnail()): ?>
+                                    <div class="cff-post-thumbnail-mini">
+                                        <a href="<?php the_permalink(); ?>">
+                                            <?php the_post_thumbnail('thumbnail'); ?>
+                                        </a>
+                                        <span class="cff-favorit-badge">⭐</span>
+                                    </div>
+                                <?php endif; ?>
+                                
+                                <div class="cff-post-content-mini">
+                                    <h4 class="cff-post-title-mini">
+                                        <a href="<?php the_permalink(); ?>">
+                                            <?php the_title(); ?>
+                                        </a>
+                                    </h4>
+                                </div>
+                            </article>
+                        <?php endwhile; ?>
+                    </div>
                     
-                    foreach ($child_categories as $child_cat):
-                        // Query para posts de esta categoría
-                        $args = array(
-                            'post_type' => 'post',
-                            'cat' => $child_cat->term_id,
-                            'posts_per_page' => $atts['posts_por_pagina'],
-                            'meta_key' => '_cff_order',
-                            'orderby' => array(
-                                'meta_value_num' => 'ASC',
-                                'date' => 'DESC'
-                            )
-                        );
-                        
-                        // Filtrar por favoritos si está activado
-                        if ($atts['mostrar_favoritos'] === 'si') {
-                            $args['meta_query'] = array(
-                                'relation' => 'OR',
-                                array(
-                                    'key' => '_cff_is_favorite',
-                                    'value' => '1',
-                                    'compare' => '='
-                                ),
-                                array(
-                                    'key' => '_cff_is_favorite',
-                                    'compare' => 'NOT EXISTS'
-                                )
-                            );
-                        }
-                        
-                        $query = new WP_Query($args);
-                        
-                        if ($query->have_posts()):
-                    ?>
-                        <div class="cff-subcategoria">
-                            <h3 class="cff-subcategoria-titulo"><?php echo esc_html($child_cat->name); ?></h3>
-                            
-                            <div class="cff-posts-grid">
-                                <?php while ($query->have_posts()): $query->the_post(); ?>
-                                    <?php
-                                    $is_favorite = get_post_meta(get_the_ID(), '_cff_is_favorite', true);
-                                    $favorite_class = $is_favorite ? 'cff-favorit' : '';
-                                    ?>
-                                    <article class="cff-post-item <?php echo $favorite_class; ?>">
-                                        <?php if (has_post_thumbnail()): ?>
-                                            <div class="cff-post-thumbnail">
-                                                <a href="<?php the_permalink(); ?>">
-                                                    <?php the_post_thumbnail('medium'); ?>
-                                                </a>
-                                                <?php if ($is_favorite): ?>
-                                                    <span class="cff-favorit-badge">⭐</span>
-                                                <?php endif; ?>
-                                            </div>
-                                        <?php endif; ?>
-                                        
-                                        <div class="cff-post-content">
-                                            <h4 class="cff-post-title">
-                                                <a href="<?php the_permalink(); ?>">
-                                                    <?php the_title(); ?>
-                                                </a>
-                                            </h4>
-                                            
-                                            <div class="cff-post-excerpt">
-                                                <?php the_excerpt(); ?>
-                                            </div>
-                                            
-                                            <a href="<?php the_permalink(); ?>" class="cff-post-link">
-                                                <?php _e('Veure més', 'catalegfiresferies'); ?>
-                                            </a>
-                                        </div>
-                                    </article>
-                                <?php endwhile; ?>
-                            </div>
-                        </div>
-                    <?php
-                        endif;
-                        wp_reset_postdata();
-                    endforeach;
-                    ?>
+                    <div class="cff-categoria-footer">
+                        <a href="<?php echo get_term_link($categoria); ?>" class="cff-veure-tots">
+                            <?php _e('Veure tots', 'catalegfiresferies'); ?> →
+                        </a>
+                    </div>
                 </div>
+                
+                <?php wp_reset_postdata(); ?>
             <?php endforeach; ?>
+        </div>
+        <?php
+        
+        return ob_get_clean();
+    }
+    
+    /**
+     * Shortcode para mostrar todos los posts de una categoría
+     */
+    public function categoria_shortcode($atts) {
+        $atts = shortcode_atts(array(
+            'slug' => '',
+            'id' => 0
+        ), $atts);
+        
+        // Obtener categoría
+        $categoria = null;
+        if (!empty($atts['slug'])) {
+            $categoria = get_term_by('slug', $atts['slug'], 'cataleg_categoria');
+        } elseif (!empty($atts['id'])) {
+            $categoria = get_term($atts['id'], 'cataleg_categoria');
+        }
+        
+        if (!$categoria || is_wp_error($categoria)) {
+            return '<p>' . __('Categoria no trobada.', 'catalegfiresferies') . '</p>';
+        }
+        
+        ob_start();
+        
+        // Query para obtener TODOS los posts de esta categoría
+        $args = array(
+            'post_type' => 'post',
+            'posts_per_page' => -1,
+            'tax_query' => array(
+                array(
+                    'taxonomy' => 'cataleg_categoria',
+                    'field' => 'term_id',
+                    'terms' => $categoria->term_id
+                )
+            ),
+            'meta_key' => '_cff_order',
+            'orderby' => array(
+                'meta_value_num' => 'ASC',
+                'date' => 'DESC'
+            )
+        );
+        
+        $query = new WP_Query($args);
+        
+        ?>
+        <div class="cff-categoria-completa">
+            <header class="cff-categoria-header">
+                <h1 class="cff-categoria-titulo-page"><?php echo esc_html($categoria->name); ?></h1>
+                <?php if (!empty($categoria->description)): ?>
+                    <div class="cff-categoria-descripcio">
+                        <?php echo wpautop($categoria->description); ?>
+                    </div>
+                <?php endif; ?>
+                <p class="cff-categoria-count">
+                    <?php printf(__('%d proveïdors', 'catalegfiresferies'), $query->found_posts); ?>
+                </p>
+            </header>
+            
+            <?php if ($query->have_posts()): ?>
+                <div class="cff-posts-grid">
+                    <?php while ($query->have_posts()): $query->the_post(); ?>
+                        <?php
+                        $is_favorite = get_post_meta(get_the_ID(), '_cff_is_favorite', true);
+                        $favorite_class = $is_favorite ? 'cff-favorit' : '';
+                        ?>
+                        <article class="cff-post-item <?php echo $favorite_class; ?>">
+                            <?php if (has_post_thumbnail()): ?>
+                                <div class="cff-post-thumbnail">
+                                    <a href="<?php the_permalink(); ?>">
+                                        <?php the_post_thumbnail('medium'); ?>
+                                    </a>
+                                    <?php if ($is_favorite): ?>
+                                        <span class="cff-favorit-badge">⭐</span>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                            
+                            <div class="cff-post-content">
+                                <h4 class="cff-post-title">
+                                    <a href="<?php the_permalink(); ?>">
+                                        <?php the_title(); ?>
+                                    </a>
+                                </h4>
+                                
+                                <div class="cff-post-excerpt">
+                                    <?php the_excerpt(); ?>
+                                </div>
+                                
+                                <a href="<?php the_permalink(); ?>" class="cff-post-link">
+                                    <?php _e('Veure més', 'catalegfiresferies'); ?>
+                                </a>
+                            </div>
+                        </article>
+                    <?php endwhile; ?>
+                </div>
+            <?php else: ?>
+                <p><?php _e('No hi ha proveïdors en aquesta categoria.', 'catalegfiresferies'); ?></p>
+            <?php endif; ?>
+            
+            <?php wp_reset_postdata(); ?>
         </div>
         <?php
         
@@ -474,35 +593,18 @@ class CatalegFiresFeries {
         }
         
         $created = 0;
-        $parent_cat_id = 0;
         
-        // Crear categoría padre "Catàleg Fires i Fèries" si no existe
-        $parent_cat = get_term_by('slug', 'cataleg-fires-feries', 'category');
-        if (!$parent_cat) {
-            $parent_result = wp_insert_term(
-                'Catàleg Fires i Fèries',
-                'category',
-                array('slug' => 'cataleg-fires-feries')
-            );
-            if (!is_wp_error($parent_result)) {
-                $parent_cat_id = $parent_result['term_id'];
-            }
-        } else {
-            $parent_cat_id = $parent_cat->term_id;
-        }
-        
-        // Crear subcategorías
+        // Crear categorías usando taxonomía personalizada
         foreach ($categories_data as $cat_data) {
             $slug = sanitize_title($cat_data['data_valor']);
-            $existing = get_term_by('slug', $slug, 'category');
+            $existing = get_term_by('slug', $slug, 'cataleg_categoria');
             
             if (!$existing) {
                 $result = wp_insert_term(
                     $cat_data['titulo'],
-                    'category',
+                    'cataleg_categoria',
                     array(
-                        'slug' => $slug,
-                        'parent' => $parent_cat_id
+                        'slug' => $slug
                     )
                 );
                 
@@ -538,7 +640,7 @@ class CatalegFiresFeries {
         
         foreach ($categories_data as $cat_data) {
             $cat_slug = sanitize_title($cat_data['data_valor']);
-            $category = get_term_by('slug', $cat_slug, 'category');
+            $category = get_term_by('slug', $cat_slug, 'cataleg_categoria');
             
             if (!$category) {
                 continue;
@@ -572,11 +674,13 @@ class CatalegFiresFeries {
                 $post_id = wp_insert_post(array(
                     'post_title' => $nombre,
                     'post_content' => '',
-                    'post_status' => 'draft',
-                    'post_category' => array($category->term_id)
+                    'post_status' => 'draft'
                 ));
                 
                 if ($post_id && !is_wp_error($post_id)) {
+                    // Asignar a la taxonomía personalizada
+                    wp_set_object_terms($post_id, $category->term_id, 'cataleg_categoria');
+                    
                     // Guardar metadata
                     update_post_meta($post_id, '_cff_provider_url', $proveedor['url']);
                     update_post_meta($post_id, '_cff_provider_image', $proveedor['imagen']);

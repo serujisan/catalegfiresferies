@@ -20,61 +20,66 @@ Plugin per gestionar un catàleg de fires i fèries amb categories jeràrquiques
 
 ## Ús
 
-### 1. Configurar Categories
-
-Ves a **Entrades → Categories** i crea:
-- **Categories pare**: Aquestes seran les seccions principals del catàleg
-- **Subcategories**: Assigna-les a les categories pare corresponents
-
-Exemple d'estructura:
-```
-Fires (categoria pare)
-  ├── Fires de tardor (subcategoria)
-  └── Fires de primavera (subcategoria)
-Fèries (categoria pare)
-  ├── Fèries medievals (subcategoria)
-  └── Fèries gastronòmiques (subcategoria)
-```
-
-### 2. Assignar Posts a Categories
-
-1. Edita o crea posts existents
-2. Assigna'ls a les subcategories creades
-3. Al metabox "Configuració Catàleg" pots:
-   - Marcar el post com a **favorit** ⭐
-   - Definir l'**ordre de visualització** (número menor = apareix primer)
-
-### 3. Importar Fitxer RTF
+### 1. Importar Fitxer RTF
 
 1. Ves a **Catàleg Fires** al menú d'administració
 2. Puja el fitxer `catalogo.rtf`
-3. El contingut es processarà i guardarà
+3. Fes clic a **Crear Categories a WordPress**
+4. Fes clic a **Importar Posts com a Esborranys** (opcional)
+
+### 2. Configurar Categories
+
+El plugin utilitza una **taxonomia personalitzada** (Categories del Catàleg) separada de les categories de WordPress.
+
+Ves a **Entrades → Categories Catàleg** per:
+- Crear noves categories
+- Editar les categories importades
+- Afegir descripcions
+
+Les categories són planes (no jeràrquiques) i cada una representa una secció del catàleg.
+### 3. Assignar Posts a Categories
+
+1. Edita posts existents de WordPress
+2. A la dreta veuràs el selector **"Categories Catàleg"**
+3. Assigna el post a una o més categories del catàleg
+4. Al metabox "Configuració Catàleg" pots:
+   - Marcar el post com a **favorit** ⭐ (es mostrarà a la pàgina principal)
+   - Definir l'**ordre de visualització** (número menor = apareix primer)
 
 ### 4. Mostrar el Catàleg
 
-Utilitza el shortcode `[cataleg_festes]` a qualsevol pàgina o entrada.
+#### Pàgina Principal (Favorits)
 
-#### Paràmetres del Shortcode
+Utilitza el shortcode `[cataleg_festes]` per mostrar totes les categories amb els seus favorits:
 
-- `categoria` - Slug de la categoria pare per mostrar només una secció
-- `mostrar_favoritos` - Mostrar només favorits (`si` o `no`)
-- `posts_por_pagina` - Nombre de posts per pàgina (`-1` per mostrar tots)
-
-#### Exemples
-
-Mostrar tot el catàleg:
 ```
 [cataleg_festes]
 ```
 
-Mostrar només la categoria "Fires":
+**Paràmetres:**
+- `columnas` - Número de columnes (per defecte: 4)
+- `max_favoritos` - Màxim de favorits per categoria (per defecte: 4)
+
+**Exemples:**
 ```
-[cataleg_festes categoria="fires"]
+[cataleg_festes columnas="3" max_favoritos="6"]
 ```
 
-Mostrar tots els posts (no només favorits) amb paginació:
+#### Pàgina de Categoria (Tots els Posts)
+
+Les categories són **enllaçables automàticament**. Quan un usuari fa clic a una categoria, WordPress mostrarà TOTS els posts d'aquella categoria.
+
+També pots usar el shortcode `[cataleg_categoria]` manualment:
+
 ```
-[cataleg_festes mostrar_favoritos="no" posts_por_pagina="10"]
+[cataleg_categoria slug="grups-de-musica"]
+```
+
+o
+
+```
+[cataleg_categoria id="123"]
+```
 ```
 
 ## Estructura del Plugin
@@ -123,6 +128,14 @@ Festes Majors de Catalunya
 https://festesmajorsdecatalunya.cat
 
 ## Changelog
+
+### Versió 2.1.0
+- **Taxonomia personalitzada**: Sistema de categories independent de WordPress
+- **Vista principal amb favorits**: Mostra 4 posts destacats per categoria
+- **Pàgines de categoria**: Enllaç a vista completa amb TOTS els posts
+- **Disseny de targetes**: Grid responsive amb hover effects
+- **Dos shortcodes**: `[cataleg_festes]` i `[cataleg_categoria]`
+- **Millor experiència d'usuari**: Navegació fluida entre favorits i tots
 
 ### Versió 2.0.0
 - Parser HTML intel·ligent per extreure estructura del catàleg
