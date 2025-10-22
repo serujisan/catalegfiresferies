@@ -3,7 +3,7 @@
  * Plugin Name: Catàleg Fires i Fèries
  * Plugin URI: https://festesmajorsdecatalunya.cat
  * Description: Plugin para gestionar catálogo de fires i fèries con categorías y favoritos
- * Version: 3.1.0
+ * Version: 3.2.0
  * Author: Sergi Maneja
  * Author URI: https://festesmajorsdecatalunya.cat
  * License: GPL2
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes
-define('CFF_VERSION', '3.1.0');
+define('CFF_VERSION', '3.2.0');
 define('CFF_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFF_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -76,6 +76,7 @@ class CatalegFiresFeries {
         add_action('wp_ajax_cff_save_category_relations', array($this, 'ajax_save_category_relations'));
         add_action('wp_ajax_cff_save_favorites_order', array($this, 'ajax_save_favorites_order'));
         add_action('wp_ajax_cff_save_favorites', array($this, 'ajax_save_favorites'));
+        add_action('wp_ajax_cff_save_category_favorites', array($this, 'ajax_save_category_favorites'));
         
         // Shortcode personalizado
         add_shortcode('cataleg_custom', array($this, 'cataleg_custom_shortcode'));
@@ -119,19 +120,21 @@ class CatalegFiresFeries {
         ) $charset_collate;";
         dbDelta($sql_relations);
         
-        // Tabla de favoritos y ordenación de posts
+        // Tabla de favoritos y ordenación de posts (por categoría padre)
         $table_favorites = $wpdb->prefix . 'cff_favorites';
         $sql_favorites = "CREATE TABLE IF NOT EXISTS $table_favorites (
             id mediumint(9) NOT NULL AUTO_INCREMENT,
+            parent_id mediumint(9) NOT NULL,
             post_id bigint(20) NOT NULL,
             wp_category_id bigint(20) NOT NULL,
             order_num int(11) DEFAULT 0,
             is_favorite tinyint(1) DEFAULT 0,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
+            KEY parent_id (parent_id),
             KEY post_id (post_id),
             KEY wp_category_id (wp_category_id),
-            UNIQUE KEY post_category (post_id, wp_category_id)
+            UNIQUE KEY parent_post_category (parent_id, post_id, wp_category_id)
         ) $charset_collate;";
         dbDelta($sql_favorites);
     }
@@ -1201,35 +1204,18 @@ class CatalegFiresFeries {
                 $post_id = intval($post_data['post_id']);
                 $order = intval($post_data['order']);
                 
-                // Verificar si el registro existe
-                $exists = $wpdb->get_var($wpdb->prepare(
-                    "SELECT COUNT(*) FROM $table_favorites WHERE post_id = %d AND wp_category_id = %d",
-                    $post_id,
-                    $cat_id
-                ));
-                
-                if ($exists) {
-                    // Actualizar
-                    $wpdb->update(
-                        $table_favorites,
-                        array('order_num' => $order),
-                        array('post_id' => $post_id, 'wp_category_id' => $cat_id),
-                        array('%d'),
-                        array('%d', '%d')
-                    );
-                } else {
-                    // Insertar
-                    $wpdb->insert(
-                        $table_favorites,
-                        array(
-                            'post_id' => $post_id,
-                            'wp_category_id' => $cat_id,
-                            'order_num' => $order,
-                            'is_favorite' => 1
-                        ),
-                        array('%d', '%d', '%d', '%d')
-                    );
-                }
+                // Actualizar orden (el registro ya debería existir)
+                $wpdb->update(
+                    $table_favorites,
+                    array('order_num' => $order),
+                    array(
+                        'parent_id' => $parent_id,
+                        'post_id' => $post_id,
+                        'wp_category_id' => $cat_id
+                    ),
+                    array('%d'),
+                    array('%d', '%d', '%d')
+                );
             }
         }
         
@@ -1237,7 +1223,55 @@ class CatalegFiresFeries {
     }
     
     /**
-     * AJAX: Guardar favoritos de una categoría
+     * AJAX: Guardar favoritos de una categoría para una categoría padre específica
+     */
+    public function ajax_save_category_favorites() {
+        check_ajax_referer('cff_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        global $wpdb;
+        $table_favorites = $wpdb->prefix . 'cff_favorites';
+        
+        $parent_id = intval($_POST['parent_id']);
+        $category_id = intval($_POST['category_id']);
+        $post_ids = isset($_POST['post_ids']) ? array_map('intval', $_POST['post_ids']) : array();
+        
+        // Eliminar favoritos existentes de esta categoría padre + categoría WP
+        $wpdb->delete(
+            $table_favorites, 
+            array(
+                'parent_id' => $parent_id,
+                'wp_category_id' => $category_id
+            ), 
+            array('%d', '%d')
+        );
+        
+        // Insertar nuevos favoritos
+        foreach ($post_ids as $index => $post_id) {
+            $wpdb->insert(
+                $table_favorites,
+                array(
+                    'parent_id' => $parent_id,
+                    'post_id' => $post_id,
+                    'wp_category_id' => $category_id,
+                    'order_num' => $index,
+                    'is_favorite' => 1
+                ),
+                array('%d', '%d', '%d', '%d', '%d')
+            );
+        }
+        
+        wp_send_json_success(array(
+            'message' => 'Favorits guardats',
+            'count' => count($post_ids)
+        ));
+    }
+    
+    /**
+     * AJAX: Guardar favoritos de una categoría (legacy - para la página independiente)
      */
     public function ajax_save_favorites() {
         check_ajax_referer('cff_nonce', 'nonce');
@@ -1324,12 +1358,13 @@ class CatalegFiresFeries {
                 $categoria = get_category($relation->wp_category_id);
                 if (!$categoria || is_wp_error($categoria)) continue;
                 
-                // Obtener posts favoritos de esta categoría (ordenados)
+                // Obtener posts favoritos de esta categoría (ordenados) para esta categoría padre
                 $favorite_posts = $wpdb->get_results($wpdb->prepare(
                     "SELECT post_id FROM $table_favorites 
-                     WHERE wp_category_id = %d AND is_favorite = 1 
+                     WHERE parent_id = %d AND wp_category_id = %d AND is_favorite = 1 
                      ORDER BY order_num ASC 
                      LIMIT %d",
+                    $parent->id,
                     $categoria->term_id,
                     $max
                 ));

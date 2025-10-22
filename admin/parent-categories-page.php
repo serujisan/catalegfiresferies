@@ -159,12 +159,26 @@ $wp_categories = get_categories(array(
                             $cat = get_category($relation->wp_category_id);
                             if (!$cat || is_wp_error($cat)) continue;
                             
-                            // Obtener posts favoritos de esta categoría
+                            // Obtener posts favoritos de esta categoría PARA ESTA CATEGORIA PADRE
                             $favorites_table = $wpdb->prefix . 'cff_favorites';
                             $favorite_posts = $wpdb->get_results($wpdb->prepare(
-                                "SELECT post_id, order_num FROM $favorites_table WHERE wp_category_id = %d AND is_favorite = 1 ORDER BY order_num ASC",
+                                "SELECT post_id, order_num FROM $favorites_table 
+                                 WHERE parent_id = %d AND wp_category_id = %d AND is_favorite = 1 
+                                 ORDER BY order_num ASC",
+                                $edit_id,
                                 $cat->term_id
                             ));
+                            
+                            // Obtener TODOS los posts de la categoría para el selector
+                            $all_posts = get_posts(array(
+                                'category' => $cat->term_id,
+                                'numberposts' => -1,
+                                'orderby' => 'title',
+                                'order' => 'ASC',
+                                'post_status' => 'publish'
+                            ));
+                            
+                            $favorite_post_ids = array_column($favorite_posts, 'post_id');
                         ?>
                             <div class="cff-category-block" data-category-id="<?php echo $cat->term_id; ?>" style="background: white; border: 1px solid #ddd; padding: 15px; margin: 10px 0;">
                                 <h4 class="cff-drag-handle" style="cursor: move; margin: 0 0 10px 0; padding-bottom: 10px; border-bottom: 2px solid #2271b1;">
@@ -174,9 +188,42 @@ $wp_categories = get_categories(array(
                                 </h4>
                                 
                                 <div class="cff-favorite-posts">
-                                    <strong><?php _e('Posts Favorits:', 'catalegfiresferies'); ?></strong>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                        <strong><?php _e('Posts Favorits:', 'catalegfiresferies'); ?></strong>
+                                        <button class="button button-small cff-toggle-favorites" 
+                                                data-category-id="<?php echo $cat->term_id; ?>"
+                                                data-parent-id="<?php echo $edit_id; ?>">
+                                            <?php _e('Seleccionar Favorits', 'catalegfiresferies'); ?>
+                                        </button>
+                                    </div>
+                                    
+                                    <!-- Selector de favoritos (oculto por defecto) -->
+                                    <div class="cff-favorites-selector" id="selector-<?php echo $cat->term_id; ?>" style="display: none; background: #f9f9f9; padding: 15px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 3px;">
+                                        <p><strong><?php _e('Marca els posts que vols mostrar com a favorits:', 'catalegfiresferies'); ?></strong></p>
+                                        <div style="max-height: 300px; overflow-y: auto; margin-bottom: 10px;">
+                                            <?php foreach ($all_posts as $post): ?>
+                                                <label style="display: block; padding: 5px 0;">
+                                                    <input type="checkbox" 
+                                                           class="cff-post-checkbox" 
+                                                           data-post-id="<?php echo $post->ID; ?>"
+                                                           <?php checked(in_array($post->ID, $favorite_post_ids)); ?>>
+                                                    <?php echo esc_html($post->post_title); ?>
+                                                </label>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <button class="button button-primary cff-save-favorites" 
+                                                data-category-id="<?php echo $cat->term_id; ?>"
+                                                data-parent-id="<?php echo $edit_id; ?>">
+                                            <?php _e('Guardar Favorits', 'catalegfiresferies'); ?>
+                                        </button>
+                                        <button class="button cff-cancel-favorites" data-category-id="<?php echo $cat->term_id; ?>">
+                                            <?php _e('Cancel·lar', 'catalegfiresferies'); ?>
+                                        </button>
+                                    </div>
+                                    
+                                    <!-- Lista de favoritos seleccionados (ordenable) -->
                                     <?php if (empty($favorite_posts)): ?>
-                                        <p style="color: #999;"><?php _e('Sense posts favorits.', 'catalegfiresferies'); ?></p>
+                                        <p style="color: #999;" class="cff-no-favorites-msg"><?php _e('Sense posts favorits. Fes clic a "Seleccionar Favorits" per afegir-ne.', 'catalegfiresferies'); ?></p>
                                     <?php else: ?>
                                         <ul class="cff-sortable-posts" data-category-id="<?php echo $cat->term_id; ?>" style="list-style: none; padding: 0; margin: 10px 0 0 0;">
                                             <?php foreach ($favorite_posts as $fav_post): 
@@ -189,11 +236,6 @@ $wp_categories = get_categories(array(
                                                 </li>
                                             <?php endforeach; ?>
                                         </ul>
-                                        <p style="margin-top: 10px;">
-                                            <a href="<?php echo admin_url('edit.php?category_name=' . $cat->slug); ?>" class="button button-small">
-                                                <?php _e('Gestionar posts', 'catalegfiresferies'); ?>
-                                            </a>
-                                        </p>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -331,6 +373,47 @@ jQuery(document).ready(function($) {
     $('.cff-sortable-posts').sortable({
         axis: 'y',
         opacity: 0.8
+    });
+    
+    // Toggle selector de favoritos
+    $('.cff-toggle-favorites').on('click', function() {
+        var catId = $(this).data('category-id');
+        $('#selector-' + catId).slideToggle();
+    });
+    
+    // Cancelar selección de favoritos
+    $('.cff-cancel-favorites').on('click', function() {
+        var catId = $(this).data('category-id');
+        $('#selector-' + catId).slideUp();
+    });
+    
+    // Guardar favoritos
+    $('.cff-save-favorites').on('click', function() {
+        var catId = $(this).data('category-id');
+        var parentId = $(this).data('parent-id');
+        var selectedPosts = [];
+        
+        $('#selector-' + catId + ' .cff-post-checkbox:checked').each(function() {
+            selectedPosts.push($(this).data('post-id'));
+        });
+        
+        $(this).prop('disabled', true).text('Guardant...');
+        
+        $.post(ajaxConfig.ajax_url, {
+            action: 'cff_save_category_favorites',
+            nonce: ajaxConfig.nonce,
+            parent_id: parentId,
+            category_id: catId,
+            post_ids: selectedPosts
+        }, function(response) {
+            if (response.success) {
+                alert('Favorits guardats! Recarrega la pàgina per veure els canvis.');
+                location.reload();
+            } else {
+                alert('Error: ' + response.data);
+                $('.cff-save-favorites').prop('disabled', false).text('Guardar Favorits');
+            }
+        });
     });
     
     // Guardar orden

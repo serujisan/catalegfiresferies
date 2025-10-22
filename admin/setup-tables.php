@@ -104,15 +104,17 @@ if ($exists_favorites) {
     
     $sql = "CREATE TABLE $table_favorites (
         id mediumint(9) NOT NULL AUTO_INCREMENT,
+        parent_id mediumint(9) NOT NULL,
         post_id bigint(20) NOT NULL,
         wp_category_id bigint(20) NOT NULL,
         order_num int(11) DEFAULT 0,
         is_favorite tinyint(1) DEFAULT 0,
         created_at datetime DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY  (id),
+        KEY parent_id (parent_id),
         KEY post_id (post_id),
         KEY wp_category_id (wp_category_id),
-        UNIQUE KEY post_category (post_id, wp_category_id)
+        UNIQUE KEY parent_post_category (parent_id, post_id, wp_category_id)
     ) $charset_collate;";
     
     dbDelta($sql);
