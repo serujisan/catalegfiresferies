@@ -3,7 +3,7 @@
  * Plugin Name: Catàleg Fires i Fèries
  * Plugin URI: https://festesmajorsdecatalunya.cat
  * Description: Plugin para gestionar catálogo de fires i fèries con categorías y favoritos
- * Version: 3.0.2
+ * Version: 3.1.0
  * Author: Sergi Maneja
  * Author URI: https://festesmajorsdecatalunya.cat
  * License: GPL2
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Definir constantes
-define('CFF_VERSION', '3.0.2');
+define('CFF_VERSION', '3.1.0');
 define('CFF_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFF_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -75,6 +75,7 @@ class CatalegFiresFeries {
         add_action('wp_ajax_cff_delete_parent_category', array($this, 'ajax_delete_parent_category'));
         add_action('wp_ajax_cff_save_category_relations', array($this, 'ajax_save_category_relations'));
         add_action('wp_ajax_cff_save_favorites_order', array($this, 'ajax_save_favorites_order'));
+        add_action('wp_ajax_cff_save_favorites', array($this, 'ajax_save_favorites'));
         
         // Shortcode personalizado
         add_shortcode('cataleg_custom', array($this, 'cataleg_custom_shortcode'));
@@ -235,6 +236,15 @@ class CatalegFiresFeries {
         
         add_submenu_page(
             'catalegfiresferies',
+            __('Gestionar Favorits', 'catalegfiresferies'),
+            __('Gestionar Favorits', 'catalegfiresferies'),
+            'manage_options',
+            'catalegfiresferies-manage-favorites',
+            array($this, 'manage_favorites_page')
+        );
+        
+        add_submenu_page(
+            'catalegfiresferies',
             __('Veure Categories WP', 'catalegfiresferies'),
             __('Veure Categories WP', 'catalegfiresferies'),
             'manage_options',
@@ -278,6 +288,13 @@ class CatalegFiresFeries {
      */
     public function categories_page() {
         include CFF_PLUGIN_DIR . 'admin/categories-page.php';
+    }
+    
+    /**
+     * Página para gestionar favoritos
+     */
+    public function manage_favorites_page() {
+        include CFF_PLUGIN_DIR . 'admin/manage-favorites.php';
     }
     
     /**
@@ -1217,6 +1234,45 @@ class CatalegFiresFeries {
         }
         
         wp_send_json_success();
+    }
+    
+    /**
+     * AJAX: Guardar favoritos de una categoría
+     */
+    public function ajax_save_favorites() {
+        check_ajax_referer('cff_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Permisos insuficientes');
+        }
+        
+        global $wpdb;
+        $table_favorites = $wpdb->prefix . 'cff_favorites';
+        
+        $category_id = intval($_POST['category_id']);
+        $post_ids = isset($_POST['post_ids']) ? array_map('intval', $_POST['post_ids']) : array();
+        
+        // Eliminar todos los favoritos de esta categoría
+        $wpdb->delete($table_favorites, array('wp_category_id' => $category_id), array('%d'));
+        
+        // Insertar nuevos favoritos
+        foreach ($post_ids as $index => $post_id) {
+            $wpdb->insert(
+                $table_favorites,
+                array(
+                    'post_id' => $post_id,
+                    'wp_category_id' => $category_id,
+                    'order_num' => $index,
+                    'is_favorite' => 1
+                ),
+                array('%d', '%d', '%d', '%d')
+            );
+        }
+        
+        wp_send_json_success(array(
+            'message' => 'Favorits guardats',
+            'count' => count($post_ids)
+        ));
     }
     
     /**
