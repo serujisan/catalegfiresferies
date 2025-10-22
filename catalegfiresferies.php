@@ -187,6 +187,15 @@ class CatalegFiresFeries {
             'catalegfiresferies-config',
             array($this, 'config_page')
         );
+        
+        add_submenu_page(
+            'catalegfiresferies',
+            __('Veure Categories', 'catalegfiresferies'),
+            __('Veure Categories', 'catalegfiresferies'),
+            'manage_options',
+            'catalegfiresferies-categories',
+            array($this, 'categories_page')
+        );
     }
     
     /**
@@ -201,6 +210,13 @@ class CatalegFiresFeries {
      */
     public function config_page() {
         include CFF_PLUGIN_DIR . 'admin/config-page.php';
+    }
+    
+    /**
+     * Página para ver categorías
+     */
+    public function categories_page() {
+        include CFF_PLUGIN_DIR . 'admin/categories-page.php';
     }
     
     /**
